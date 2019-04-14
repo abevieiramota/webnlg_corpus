@@ -5,6 +5,7 @@ import os
 import sys
 import zipfile
 import glob
+import shutil
 
 
 def get_release_dir(release):
@@ -61,7 +62,7 @@ def download(release, force=False):
     if os.path.isdir(release_dir):
 
         if force:
-            os.rmdir(release_dir)
+            shutil.rmtree(release_dir)
         else:
             raise ValueError(f'{release} is already dowloaded at {release_dir}')
 

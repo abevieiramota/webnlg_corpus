@@ -21,11 +21,9 @@ def load(release):
         raise ValueError('{} not in in {}'.format(release,
                          list(RELEASES_URLS.keys())))
 
-    result = {}
+    db = TinyDB(storage=MemoryStorage)
 
     for dataset_name in get_release_datasets_dir(release):
-
-        db = TinyDB(storage=MemoryStorage)
 
         for filepath in get_dataset_files(release, dataset_name):
 
@@ -33,9 +31,7 @@ def load(release):
 
             db.insert_multiple(entries_dicts)
 
-        result[dataset_name] = WebNLGCorpus(dataset_name, db)
-
-    return result
+    return WebNLGCorpus(release, db)
 
 
 def make_dict_from_triple(triple_text):
@@ -69,11 +65,12 @@ def read_webnlg_file(dataset, filepath):
 
         mtriples = entry.find('modifiedtripleset').findall('mtriple')
         otriples = entry.find('originaltripleset').findall('otriple')
+        ntriples = int(entry.attrib['size'])
 
         idx = "{dataset}_{category}_{ntriples}_{eid}".format(
                dataset=dataset,
                category=entry.attrib['category'],
-               ntriples=entry.attrib['size'],
+               ntriples=ntriples,
                eid=entry.attrib['eid'])
 
         entry_dict = {
@@ -81,7 +78,7 @@ def read_webnlg_file(dataset, filepath):
             "idx": idx,
             "category": entry.attrib['category'],
             "eid": entry.attrib['eid'],
-            "ntriples": entry.attrib['size'],
+            "ntriples": ntriples,
             "content": ET.tostring(entry),
             "otriples": [make_dict_from_triple(e.text) for e in otriples],
             "mtriples": [make_dict_from_triple(e.text) for e in mtriples]
@@ -180,10 +177,14 @@ class WebNLGEntry(object):
 
         lines = []
 
-        lines.append(f"Triple info: category={self.category}"
-                     "eid={self.eid} idx={self.idx}\n")
+        lines.append(f"Triple info: Category={self.category} "
+                     "eid={eid} idx={idx}\n".format(
+                             eid=self.eid,
+                             idx=self.idx
+                             )
+                     )
 
-        lines.append("\tModified triples:\n")
+        lines.append("\tModified Triples:\n")
         lines.extend([m['text'] for m in self._entry['mtriples']])
         lines.append("\n")
 
@@ -212,20 +213,20 @@ class WebNLGEntry(object):
 
 class WebNLGCorpus(object):
 
-    def __init__(self, dataset_name, db):
+    def __init__(self, release, db):
 
-        self._dataset_name = dataset_name
+        self._release = release
         self._db = db
         self._query = Query()
 
     @property
-    def dataset_name(self):
+    def release(self):
 
-        return self._dataset_name
+        return self._release
 
-    def subset(self, ntriples=None, categories=None):
+    def subset(self, ntriples=None, categories=None, datasets=None):
 
-        if ntriples is None and categories is None:
+        if ntriples is None and categories is None and datasets is None:
             raise ValueError('At least one filter must be informed.')
 
         filters = []
@@ -236,20 +237,23 @@ class WebNLGCorpus(object):
         if categories:
             filters.append(self._query.category.one_of(categories))
 
+        if datasets:
+            filters.append(self._query.dataset.one_of(datasets))
+
         subset_db = TinyDB(storage=MemoryStorage)
         subset_db.insert_multiple(self._db.search(reduce(__and__, filters)))
 
-        return WebNLGCorpus(self.dataset_name, subset_db)
+        return WebNLGCorpus(self.release, subset_db)
 
     def sample(self, eid=None, categories=None, ntriples=None, idx=None,
-               seed=None):
+               seed=None, datasets=None):
 
         rg = Random()
         rg.seed(seed)
 
         filters = []
 
-        if eid or categories or ntriples or idx:
+        if eid or categories or ntriples or idx or datasets:
 
             if idx:
                 filters.append(self._query.idx == idx)
@@ -259,6 +263,8 @@ class WebNLGCorpus(object):
                 filters.append(self._query.category.one_of(categories))
             if ntriples:
                 filters.append(self._query.ntriples.one_of(ntriples))
+            if datasets:
+                filters.append(self._query.dataset.one_of(datasets))
 
             sample_entry = rg.choice(self._db.search(reduce(__and__, filters)))
 
@@ -308,48 +314,53 @@ class WebNLGCorpus(object):
         mtriples_dicts = []
         lexes_dicts = []
 
-        for entry_dict in self._db:
+        for entry in self._db:
 
             entry_dict = {
-                "idx": entry_dict['idx'],
-                "dataset": entry_dict['dataset'],
-                "category": entry_dict['category'],
-                "eid": entry_dict['eid'],
-                "size": entry_dict['size'],
-                "ntriples": entry_dict['ntriples'],
-                "content": entry_dict['content']
+                "idx": entry['idx'],
+                "dataset": entry['dataset'],
+                "category": entry['category'],
+                "eid": entry['eid'],
+                "ntriples": entry['ntriples'],
+                "content": entry['content']
             }
             entries_dicts.append(entry_dict)
 
             otriple_dict = [
                 {
-                    'idx': entry_dict['idx'],
+                    'idx': entry['idx'],
+                    'dataset': entry['dataset'],
+                    'category': entry['category'],
                     'text': ot['text'],
                     'object': ot['object'],
                     'predicate': ot['predicate'],
                     'subject': ot['subject']
-                } for ot in entry_dict['otriples']
+                } for ot in entry['otriples']
             ]
             otriples_dicts.extend(otriple_dict)
 
             mtriple_dict = [
                 {
-                    'idx': entry_dict['idx'],
+                    'idx': entry['idx'],
+                    'dataset': entry['dataset'],
+                    'category': entry['category'],
                     'text': mt['text'],
                     'object': mt['object'],
                     'predicate': mt['predicate'],
                     'subject': mt['subject']
-                } for mt in entry_dict['mtriples']
+                } for mt in entry['mtriples']
             ]
             mtriples_dicts.extend(mtriple_dict)
 
             lex_dict = [
                 {
-                    'idx': entry_dict['idx'],
-                    'ltext': l['ltext'],
+                    'idx': entry['idx'],
+                    'dataset': entry['dataset'],
+                    'category': entry['category'],
+                    'text': l['text'],
                     'comment': l['comment'],
                     'lid': l['lid']
-                } for l in entry_dict['lexes']
+                } for l in entry['lexes']
             ]
             lexes_dicts.extend(lex_dict)
 
@@ -364,11 +375,11 @@ class WebNLGCorpus(object):
 
     def __len__(self):
 
-        return len(self.db)
+        return len(self._db)
 
     def __str__(self):
 
-        return self.dataset_name
+        return self.release
 
     def __iter__(self):
 

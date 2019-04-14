@@ -6,13 +6,13 @@ with open('README.md', 'r') as f:
     long_description = f.read()
 
 setup(name='webnlg_corpus',
-      version='0.1.dev8',
+      version='0.1.dev10',
       url='https://github.com/abevieiramota/webnlg_corpus',
       license='CC BY-NC-SA 4.0',
       author='Abelardo Vieira Mota',
       author_email='abevieiramota@gmail.com',
       description='WebNLG Corpus',
-      packages=find_packages(),
+      packages=find_packages(exclude=['notebooks']),
       long_description=long_description,
       long_description_content_type="text/markdown",
       classifiers=[
