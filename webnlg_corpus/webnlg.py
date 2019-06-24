@@ -177,7 +177,7 @@ class WebNLGEntry(object):
 
         lines = []
 
-        lines.append(f"Triple info: Category={self.category} "
+        lines.append(f"Entry info: Category={self.category} "
                      "eid={eid} idx={idx}\n".format(
                              eid=self.eid,
                              idx=self.idx
